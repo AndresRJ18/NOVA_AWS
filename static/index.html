@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Interview Coach - AI-Powered Technical Interview Practice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/recording-ui.css">
+    <style>
+        :root {
+            --color-primary: #8B46FF;
+            --color-secondary: #FF9900;
+            --color-accent: #146EB4;
+            --color-success: #16A34A;
+            --color-warning: #F59E0B;
+            --color-error: #DC2626;
+            
+            --color-bg: #0F1419;
+            --color-bg-secondary: #16191F;
+            --color-bg-tertiary: #1E2228;
+            --color-surface: #1A1D23;
+            
+            --color-text: #FFFFFF;
+            --color-text-secondary: #AAB7C4;
+            --color-text-muted: #687078;
+            
+            --color-border: #2E3338;
+            --color-border-hover: #3E4348;
+            
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        /* Navbar */
+        .navbar {
+            background: var(--color-bg-secondary);
+            border-bottom: 1px solid var(--color-border);
+            padding: 1rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--color-text);
+            font-weight: 700;
+            font-size: 1.25rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .navbar-brand:hover {
+            opacity: 0.8;
+        }
+        
+        .navbar-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.125rem;
+        }
+        
+        .navbar-nav {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+        
+        .nav-link {
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9375rem;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+        
+        .nav-link:hover {
+            color: var(--color-text);
+        }
+        
+        .nav-link.active {
+            color: var(--color-primary);
+        }
+        
+        /* Main Container */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+        
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+        
+        .hero-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.125rem;
+            color: var(--color-text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Card */
+        .card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--color-text);
+        }
+        
+        /* Form */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .form-label {
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+        
+        .form-select {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 1rem;
+            color: var(--color-text);
+            font-size: 0.9375rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        
+        .form-select:hover {
+            border-color: var(--color-border-hover);
+        }
+        
+        .form-select:focus {
+            outline: none;
+            border-color: var(--color-primary);
+        }
+        
+        .form-textarea {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 1rem;
+            color: var(--color-text);
+            font-size: 0.9375rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.2s;
+        }
+        
+        .form-textarea:focus {
+            outline: none;
+            border-color: var(--color-primary);
+        }
+        
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        
+        .form-checkbox input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.9375rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #7A3DE6;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: var(--color-bg-tertiary);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--color-bg-secondary);
+            border-color: var(--color-border-hover);
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        
+        .status-idle {
+            background: var(--color-bg-tertiary);
+            color: var(--color-text-secondary);
+        }
+        
+        .status-processing {
+            background: rgba(139, 70, 255, 0.1);
+            color: var(--color-primary);
+        }
+        
+        .status-speaking {
+            background: rgba(22, 163, 74, 0.1);
+            color: var(--color-success);
+        }
+        
+        /* Question Box */
+        .question-box {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .question-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        
+        .question-text {
+            font-size: 1.25rem;
+            font-weight: 500;
+            color: var(--color-text);
+            line-height: 1.6;
+        }
+        
+        /* Feedback Box */
+        .feedback-box {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .feedback-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--color-text);
+        }
+        
+        .feedback-content {
+            color: var(--color-text-secondary);
+            line-height: 1.8;
+        }
+        
+        /* Performance Indicator */
+        .performance-indicator {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            margin-bottom: 2rem;
+        }
+        
+        .performance-score {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--color-primary);
+        }
+        
+        .performance-trend {
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+        
+        /* Utility Classes */
+        .hidden {
+            display: none !important;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .mb-lg {
+            margin-bottom: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            .navbar-container {
+                padding: 0 1rem;
+            }
+            
+            .main-container {
+                padding: 2rem 1rem;
+            }
+            
+            .hero-title {
+                font-size: 2rem;
+            }
+            
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a class="navbar-brand" onclick="location.reload()">
+                <div class="navbar-logo">M</div>
+                <span>Mock Interview Coach</span>
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link active" onclick="showSection('interview')">Practice</a>
+                <a class="nav-link" onclick="showSection('dashboard')">Dashboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Configuration Section -->
+        <div id="configSection">
+            <div class="hero">
+                <h1 class="hero-title">AI-Powered Technical Interview Practice</h1>
+                <p class="hero-subtitle">Practice with AWS Bedrock Nova 2 Lite and get real-time feedback on your technical interview skills</p>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Configure Your Interview</h2>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Role</label>
+                        <select id="role" class="form-select">
+                            <option value="cloud_engineer">Cloud Engineer</option>
+                            <option value="devops_engineer">DevOps Engineer</option>
+                            <option value="ml_engineer">ML Engineer</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Level</label>
+                        <select id="level" class="form-select">
+                            <option value="junior">Junior</option>
+                            <option value="mid">Mid</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Language</label>
+                        <select id="language" class="form-select">
+                            <option value="en">English</option>
+                            <option value="es">Español</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group mb-lg">
+                    <label class="form-checkbox">
+                        <input type="checkbox" id="demoMode">
+                        <span class="form-label">Demo Mode (text-based practice)</span>
+                    </label>
+                </div>
+
+                <button class="btn btn-primary" onclick="startInterview()">Start Interview</button>
+            </div>
+        </div>
+
+        <!-- Interview Section -->
+        <div id="interviewSection" class="hidden">
+            <div class="performance-indicator">
+                <div>
+                    <div class="performance-score" id="performanceScore">--</div>
+                    <div class="performance-trend" id="performanceTrend">Performance Score</div>
+                </div>
+                <div style="margin-left: auto;">
+                    <span id="audioState" class="status-badge status-idle">READY</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="question-box">
+                    <div class="question-label">Question</div>
+                    <p id="questionText" class="question-text">Loading question...</p>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Your Response</label>
+                    <textarea id="responseText" class="form-textarea" placeholder="Type your answer here or use voice input..."></textarea>
+                </div>
+                
+                <!-- Voice recording controls -->
+                <div id="recordingButton" style="margin-top: 1rem;"></div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="submitResponse()">Submit Response</button>
+                    <button class="btn btn-secondary" onclick="getNextQuestion()">Next Question</button>
+                    <button class="btn btn-secondary" onclick="downloadReport()" id="downloadReportBtn" style="display: none;">Download PDF Report</button>
+                    <button class="btn btn-secondary" onclick="endInterview()">End Interview</button>
+                </div>
+                
+                <div id="feedbackContainer" class="feedback-box hidden">
+                    <h3 class="feedback-title">Feedback</h3>
+                    <div id="feedbackText" class="feedback-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let currentQuestion = null;
+        
+        function showSection(section) {
+            // Navigation handler
+            if (section === 'interview') {
+                location.reload();
+            } else if (section === 'dashboard') {
+                showDashboard();
+            }
+        }
+        
+        async function showDashboard() {
+            // Hide all sections
+            document.getElementById('configSection').classList.add('hidden');
+            document.getElementById('interviewSection').classList.add('hidden');
+            
+            // Create dashboard section if it doesn't exist
+            let dashboardSection = document.getElementById('dashboardSection');
+            if (!dashboardSection) {
+                dashboardSection = document.createElement('div');
+                dashboardSection.id = 'dashboardSection';
+                document.querySelector('.main-container').appendChild(dashboardSection);
+            }
+            
+            dashboardSection.classList.remove('hidden');
+            
+            try {
+                // Fetch global metrics
+                const globalResponse = await fetch('/api/metrics/global');
+                const globalData = await globalResponse.json();
+                
+                // Fetch area metrics
+                const areaResponse = await fetch('/api/metrics/areas');
+                const areaData = await areaResponse.json();
+                
+                // Build dashboard HTML
+                dashboardSection.innerHTML = `
+                    <div class="hero">
+                        <h1 class="hero-title">Performance Dashboard</h1>
+                        <p class="hero-subtitle">Track your interview performance and progress over time</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h2 class="card-title">Global Statistics</h2>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+                            <div style="padding: 1.5rem; background: var(--color-bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+                                <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin-bottom: 0.5rem;">Total Sessions</p>
+                                <p style="font-size: 2rem; font-weight: 700; color: var(--color-primary);">${globalData.total_sessions || 0}</p>
+                            </div>
+                            <div style="padding: 1.5rem; background: var(--color-bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+                                <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin-bottom: 0.5rem;">Average Score</p>
+                                <p style="font-size: 2rem; font-weight: 700; color: var(--color-success);">${Math.round(globalData.average_score || 0)}</p>
+                            </div>
+                            <div style="padding: 1.5rem; background: var(--color-bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+                                <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin-bottom: 0.5rem;">Questions Answered</p>
+                                <p style="font-size: 2rem; font-weight: 700; color: var(--color-accent);">${globalData.total_questions || 0}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2 class="card-title">Performance by Technical Area</h2>
+                        <div style="display: grid; gap: 1rem;">
+                            ${Object.entries(areaData).map(([area, data]) => {
+                                const avgScore = Math.round(data.average_score || 0);
+                                let scoreColor = '#DC2626';
+                                if (avgScore >= 70) scoreColor = '#16A34A';
+                                else if (avgScore >= 40) scoreColor = '#F59E0B';
+                                
+                                return `
+                                    <div style="padding: 1rem; background: var(--color-bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <p style="font-weight: 600; color: var(--color-text); margin-bottom: 0.25rem;">${area.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
+                                            <p style="font-size: 0.875rem; color: var(--color-text-secondary);">${data.question_count || 0} questions</p>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <p style="font-size: 1.5rem; font-weight: 700; color: ${scoreColor};">${avgScore}</p>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                dashboardSection.innerHTML = `
+                    <div class="hero">
+                        <h1 class="hero-title">Performance Dashboard</h1>
+                        <p class="hero-subtitle">Track your interview performance and progress over time</p>
+                    </div>
+                    
+                    <div class="card">
+                        <p style="color: var(--color-text-secondary); text-align: center; padding: 2rem;">
+                            No data available yet. Complete an interview to see your statistics!
+                        </p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function startInterview() {
+            const role = document.getElementById('role').value;
+            const level = document.getElementById('level').value;
+            const language = document.getElementById('language').value;
+            const demoMode = document.getElementById('demoMode').checked;
+            
+            try {
+                const response = await fetch('/api/session/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({role, level, language, demo_mode: demoMode})
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                sessionId = data.session_id;
+                
+                // Connect WebSocket for voice interface if not in demo mode
+                if (!demoMode && window.connectVoiceWebSocket) {
+                    window.connectVoiceWebSocket(sessionId);
+                }
+                
+                document.getElementById('configSection').classList.add('hidden');
+                document.getElementById('interviewSection').classList.remove('hidden');
+                
+                getNextQuestion();
+            } catch (error) {
+                alert('Error starting interview: ' + error.message);
+            }
+        }
+        
+        async function getNextQuestion() {
+            try {
+                const response = await fetch(`/api/session/${sessionId}/question`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                if (data.question === null) {
+                    alert('No more questions. Ending interview...');
+                    endInterview();
+                    return;
+                }
+                
+                currentQuestion = data.question;
+                document.getElementById('questionText').textContent = data.text;
+                document.getElementById('feedbackContainer').classList.add('hidden');
+                document.getElementById('responseText').value = '';
+                document.getElementById('audioState').textContent = 'READY';
+                document.getElementById('audioState').className = 'status-badge status-idle';
+                
+                // Update performance indicator if we have evaluations
+                updatePerformanceIndicator();
+            } catch (error) {
+                alert('Error getting question: ' + error.message);
+            }
+        }
+        
+        async function updatePerformanceIndicator() {
+            try {
+                const response = await fetch(`/api/session/${sessionId}/performance`);
+                const data = await response.json();
+                
+                if (data.average_score !== undefined) {
+                    document.getElementById('performanceScore').textContent = Math.round(data.average_score);
+                    
+                    const trend = data.trend || 'stable';
+                    const trendText = trend === 'improving' ? 'Improving' : 
+                                    trend === 'declining' ? 'Needs Work' : 'Stable';
+                    document.getElementById('performanceTrend').textContent = trendText;
+                }
+            } catch (error) {
+                console.error('Error updating performance:', error);
+            }
+        }
+        
+        async function submitResponse() {
+            const responseText = document.getElementById('responseText').value;
+            
+            if (!responseText.trim()) {
+                return; // Just return, no alert
+            }
+            
+            document.getElementById('audioState').textContent = 'PROCESSING';
+            document.getElementById('audioState').className = 'status-badge status-processing';
+            
+            try {
+                const response = await fetch(`/api/session/${sessionId}/response`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: responseText})
+                });
+                
+                const data = await response.json();
+                
+                console.log('Response data:', data);
+                
+                if (data.error) {
+                    document.getElementById('feedbackText').innerHTML = `<p style="color: var(--color-error);">Error: ${data.error}</p>`;
+                    document.getElementById('feedbackContainer').classList.remove('hidden');
+                    document.getElementById('audioState').textContent = 'ERROR';
+                    document.getElementById('audioState').className = 'status-badge status-idle';
+                    return;
+                }
+                
+                const evaluation = data.evaluation || data;
+                
+                if (evaluation && evaluation.score !== undefined) {
+                    let scoreColor = '#DC2626';
+                    if (evaluation.score >= 70) {
+                        scoreColor = '#16A34A';
+                    } else if (evaluation.score >= 40) {
+                        scoreColor = '#F59E0B';
+                    }
+                    
+                    const strengths = evaluation.strengths || [];
+                    const improvements = evaluation.improvements || [];
+                    const suggestions = evaluation.suggestions || [];
+                    const recommended_topics = evaluation.recommended_topics || [];
+                    
+                    let feedbackHTML = `
+                        <div style="margin-bottom: 1.5rem;">
+                            <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin-bottom: 0.5rem;">Score</p>
+                            <p style="color: ${scoreColor}; font-size: 2.5rem; font-weight: 700; margin: 0;">${evaluation.score}/100</p>
+                        </div>
+                    `;
+                    
+                    if (strengths.length > 0) {
+                        feedbackHTML += `
+                            <div style="margin-bottom: 1.5rem;">
+                                <p style="font-weight: 600; color: var(--color-success); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    Strengths
+                                </p>
+                                <ul style="margin: 0; padding-left: 1.5rem; color: var(--color-text-secondary);">
+                                    ${strengths.map(s => `<li style="margin-bottom: 0.5rem;">${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                    
+                    if (improvements.length > 0) {
+                        feedbackHTML += `
+                            <div style="margin-bottom: 1.5rem;">
+                                <p style="font-weight: 600; color: var(--color-warning); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                    Areas for Improvement
+                                </p>
+                                <ul style="margin: 0; padding-left: 1.5rem; color: var(--color-text-secondary);">
+                                    ${improvements.map(i => `<li style="margin-bottom: 0.5rem;">${i}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                    
+                    // Check for both suggestions and recommended_topics
+                    const allSuggestions = [...suggestions, ...recommended_topics];
+                    
+                    if (allSuggestions.length > 0) {
+                        feedbackHTML += `
+                            <div style="margin-bottom: 1.5rem;">
+                                <p style="font-weight: 600; color: var(--color-primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                    Recommended Topics
+                                </p>
+                                <ul style="margin: 0; padding-left: 1.5rem; color: var(--color-text-secondary);">
+                                    ${allSuggestions.map(s => `<li style="margin-bottom: 0.5rem;">${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                    
+                    document.getElementById('feedbackText').innerHTML = feedbackHTML;
+                } else {
+                    document.getElementById('feedbackText').innerHTML = `
+                        <p>Response submitted successfully!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+                
+                document.getElementById('feedbackContainer').classList.remove('hidden');
+                document.getElementById('audioState').textContent = 'COMPLETE';
+                document.getElementById('audioState').className = 'status-badge status-speaking';
+                
+                updatePerformanceIndicator();
+            } catch (error) {
+                console.error('Submit error:', error);
+                document.getElementById('feedbackText').innerHTML = `<p style="color: var(--color-error);">Error: ${error.message}</p>`;
+                document.getElementById('feedbackContainer').classList.remove('hidden');
+                document.getElementById('audioState').textContent = 'ERROR';
+                document.getElementById('audioState').className = 'status-badge status-idle';
+            }
+        }
+        
+        function downloadReport() {
+            window.open(`/api/report/${sessionId}`, '_blank');
+        }
+        
+        async function endInterview() {
+            document.getElementById('audioState').textContent = 'PROCESSING';
+            document.getElementById('audioState').className = 'status-badge status-processing';
+            
+            try {
+                const response = await fetch(`/api/session/${sessionId}/end`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                console.log('End interview data:', data);
+                
+                // Get final score - use final_score, overall_score, or fallback to 0
+                let finalScore = data.final_score || data.overall_score || 0;
+                let questionsAnswered = data.questions_answered || 0;
+                
+                // Hide the interview section
+                document.getElementById('interviewSection').classList.add('hidden');
+                
+                // Show config section but replace content with results
+                const configSection = document.getElementById('configSection');
+                configSection.classList.remove('hidden');
+                
+                // Determine color based on final score
+                let scoreColor = '#DC2626';
+                if (finalScore >= 70) {
+                    scoreColor = '#16A34A';
+                } else if (finalScore >= 40) {
+                    scoreColor = '#F59E0B';
+                }
+                
+                configSection.innerHTML = `
+                    <div class="hero">
+                        <h1 class="hero-title">Interview Complete!</h1>
+                        <p class="hero-subtitle">Great job! Here's your performance summary</p>
+                    </div>
+
+                    <div class="card">
+                        <div style="text-align: center; padding: 2rem;">
+                            <div style="margin-bottom: 2rem;">
+                                <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Final Score</p>
+                                <p style="color: ${scoreColor}; font-size: 4rem; font-weight: 700; margin: 0; line-height: 1;">${Math.round(finalScore)}/100</p>
+                            </div>
+                            
+                            <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-bg-secondary); border-radius: var(--radius-lg); border: 1px solid var(--color-border);">
+                                <p style="color: var(--color-text-secondary); font-size: 1.125rem;">
+                                    <strong style="color: var(--color-text);">${questionsAnswered}</strong> Questions Answered
+                                </p>
+                            </div>
+                            
+                            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="window.open('/api/report/${sessionId}', '_blank')" style="min-width: 200px;">
+                                    <svg style="width: 20px; height: 20px; margin-right: 0.5rem;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    Download PDF Report
+                                </button>
+                                <button class="btn btn-secondary" onclick="location.reload()" style="min-width: 200px;">
+                                    Start New Interview
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('End interview error:', error);
+                document.getElementById('feedbackText').innerHTML = `<p style="color: var(--color-error);">Error: ${error.message}</p>`;
+                document.getElementById('feedbackContainer').classList.remove('hidden');
+                document.getElementById('audioState').textContent = 'ERROR';
+                document.getElementById('audioState').className = 'status-badge status-idle';
+            }
+        }
+    </script>
+    
+    <!-- Voice Interface Modules -->
+    <script type="module">
+        import { WebSocketClient } from '/static/js/websocket-client.js';
+        import { AudioCapture } from '/static/js/audio-capture.js';
+        import { AudioPlayback } from '/static/js/audio-playback.js';
+        import { RecordingUI } from '/static/js/recording-ui.js';
+        
+        let recordingUI = null;
+        let wsClient = null;
+        
+        function initializeVoiceInterface() {
+            const demoMode = document.getElementById('demoMode').checked;
+            
+            if (!demoMode && !recordingUI) {
+                try {
+                    console.log('Initializing voice interface...');
+                    
+                    wsClient = null;
+                    const audioCapture = new AudioCapture();
+                    const audioPlayback = new AudioPlayback();
+                    
+                    recordingUI = new RecordingUI('recordingButton');
+                    recordingUI.setModules(audioCapture, audioPlayback, null);
+                    
+                    console.log('Voice interface initialized successfully');
+                } catch (error) {
+                    console.error('Failed to initialize voice interface:', error);
+                }
+            } else if (demoMode && recordingUI) {
+                if (recordingUI.cleanup) {
+                    recordingUI.cleanup();
+                }
+                if (wsClient) {
+                    wsClient.disconnect();
+                }
+                recordingUI = null;
+                wsClient = null;
+                console.log('Voice interface disabled (demo mode)');
+            }
+        }
+        
+        window.connectVoiceWebSocket = async function(sessionId) {
+            if (!recordingUI || !sessionId) {
+                console.warn('Cannot connect WebSocket: recordingUI or sessionId missing');
+                return;
+            }
+            
+            try {
+                console.log(`Connecting WebSocket for session: ${sessionId}`);
+                wsClient = new WebSocketClient();
+                await wsClient.connect(sessionId);
+                
+                const audioCapture = recordingUI.audioCapture;
+                const audioPlayback = recordingUI.audioPlayback;
+                recordingUI.setModules(audioCapture, audioPlayback, wsClient);
+                
+                console.log('WebSocket connected successfully');
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+            }
+        };
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, setting up voice interface...');
+            
+            const demoModeCheckbox = document.getElementById('demoMode');
+            if (demoModeCheckbox) {
+                demoModeCheckbox.addEventListener('change', initializeVoiceInterface);
+                console.log('Demo mode listener attached');
+            }
+            
+            initializeVoiceInterface();
+        });
+        
+        window.initializeVoiceInterface = initializeVoiceInterface;
+    </script>
+</body>
+</html>
