@@ -3248,6 +3248,7 @@ window._startRecording = async function() {
     // ── Web Speech API fallback ───────────────────────────────
     if (!_srAvailable()) {
         _showVoiceUnavailable();
+        _srDone();
         return;
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -3269,10 +3270,10 @@ window._startRecording = async function() {
     _speechRec.onend  = _srDone;
     _speechRec.onerror = (e) => {
         console.error('[voice] SR error:', e.error);
+        _srDone();
         if (e.error === 'network' || e.error === 'not-allowed' || e.error === 'service-not-allowed') {
             _showVoiceUnavailable();
         }
-        _srDone();
     };
 
     try {
@@ -3359,23 +3360,53 @@ window._playFeedbackAudio = async function(text) {
     } catch (e) {}
 };
 
+let _voiceToastTimer = null;
 function _showVoiceUnavailable() {
     const lang = (typeof sessionConfig !== 'undefined' && sessionConfig.language === 'es') ? 'es' : 'en';
     const msg = lang === 'es'
-        ? 'Voz no disponible. Escribe tu respuesta en el campo de texto.'
-        : 'Voice unavailable. Please type your answer in the text field.';
-    const existing = document.getElementById('voiceUnavailableBanner');
-    if (existing) return;
-    const banner = document.createElement('div');
-    banner.id = 'voiceUnavailableBanner';
-    banner.style.cssText = 'padding:8px 16px;background:#2d2d2d;color:#aaa;font-size:13px;text-align:center;border-top:1px solid #333;';
-    banner.textContent = msg;
-    const btnRecord = document.getElementById('btnRecord');
-    if (btnRecord) {
-        btnRecord.disabled = true;
-        btnRecord.title = msg;
-        btnRecord.insertAdjacentElement('afterend', banner);
+        ? 'Voz no disponible — escribe tu respuesta.'
+        : 'Voice unavailable — please type your answer.';
+
+    let toast = document.getElementById('voiceUnavailableToast');
+    if (toast) {
+        // toggle: if visible, hide it
+        toast.style.opacity = '0';
+        clearTimeout(_voiceToastTimer);
+        _voiceToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 200);
+        return;
     }
+
+    toast = document.createElement('div');
+    toast.id = 'voiceUnavailableToast';
+    toast.textContent = msg;
+    toast.style.cssText = [
+        'position:fixed',
+        'bottom:80px',
+        'left:50%',
+        'transform:translateX(-50%)',
+        'background:#1e1e1e',
+        'color:#999',
+        'font-size:12px',
+        'padding:7px 14px',
+        'border-radius:6px',
+        'border:1px solid #333',
+        'z-index:9999',
+        'cursor:pointer',
+        'transition:opacity .2s',
+        'white-space:nowrap',
+    ].join(';');
+    toast.onclick = () => {
+        toast.style.opacity = '0';
+        clearTimeout(_voiceToastTimer);
+        _voiceToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 200);
+    };
+    document.body.appendChild(toast);
+
+    clearTimeout(_voiceToastTimer);
+    _voiceToastTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => { toast.style.display = 'none'; }, 200);
+    }, 4000);
 }
 
 window._connectVoice = async function(sid) {
