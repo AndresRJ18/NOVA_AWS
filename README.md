@@ -184,6 +184,21 @@ When Cognito env vars are absent: the Google button stays disabled and demo mode
 
 ---
 
+## Roadmap
+
+| Area | Improvement |
+|------|-------------|
+| **Voice in cloud** | Replace App Runner with ECS Fargate + ALB — App Runner's Envoy proxy blocks WebSocket upgrades (HTTP 403), preventing Nova Sonic bidirectional streaming in production. ECS + ALB natively supports WebSocket. |
+| **Voice in cloud (alt)** | Add API Gateway WebSocket API in front of the voice endpoint, with a Lambda proxy that maintains the Nova Sonic session. |
+| **Auth** | Add refresh token rotation — current implementation stores the id_token in localStorage without expiry handling. |
+| **Dashboard** | Session history table with score progression chart and per-area breakdown from DynamoDB. Endpoint `/api/user/{id}/sessions` is designed but UI pending. |
+| **PDF report** | Add charts (score ring, area bars) to the PDF export using ReportLab's drawing API. Currently text-only. |
+| **Question difficulty** | The `DifficultyAdjuster` is wired but the adjustment signal is not fed back into question generation. Close the loop for truly adaptive interviews. |
+| **Prompt language** | Nova Sonic system prompts still reference "the candidate" in some edge cases. Full second-person audit needed. |
+| **Tests** | Increase test coverage for `session_manager` and `evaluator` with integration tests against a local DynamoDB mock. |
+
+---
+
 ## Author
 
 **Andrés Rodas** — Computer Engineering, UPCH · Cloud Computing & AI

@@ -109,13 +109,35 @@ export class AudioCapture {
     }
 
     /**
-     * Setup modern AudioWorklet for audio processing
+     * Setup AudioWorklet for audio processing (modern, non-deprecated).
+     * Falls back to ScriptProcessorNode only if module load fails.
      * @private
      */
     async _setupAudioWorklet() {
-        // For simplicity, fall back to ScriptProcessor
-        // In production, you'd load a separate AudioWorklet module
-        this._setupScriptProcessor();
+        try {
+            await this.audioContext.audioWorklet.addModule(
+                '/static/js/audio-worklet-processor.js'
+            );
+            this.processorNode = new AudioWorkletNode(
+                this.audioContext,
+                'nova-pcm-processor'
+            );
+            this.processorNode.port.onmessage = (event) => {
+                if (!this.isCapturing) return;
+                const { pcm, rms } = event.data;
+                this.volumeLevel = Math.min(100, Math.floor(rms * 300));
+                const chunk = new Int16Array(pcm);
+                this.audioChunks.push(chunk);
+                if (this.onAudioChunkCallback) {
+                    this.onAudioChunkCallback(chunk.buffer);
+                }
+            };
+            this.sourceNode.connect(this.processorNode);
+            this.processorNode.connect(this.audioContext.destination);
+        } catch (e) {
+            console.warn('[audio] AudioWorklet unavailable, using ScriptProcessor:', e.message);
+            this._setupScriptProcessor();
+        }
     }
 
     /**
