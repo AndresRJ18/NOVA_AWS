@@ -117,8 +117,7 @@ class WebSocketHandler:
             WebSocketDisconnect: When the client disconnects
         """
         try:
-            # Accept the WebSocket connection
-            await self.websocket.accept()
+            # Connection already accepted by the FastAPI endpoint
             self.is_connected_flag = True
             self.last_pong_time = datetime.utcnow()
             
