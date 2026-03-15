@@ -14,7 +14,7 @@
 
 **NovA AI** is a generative AI interview coach that helps Latin American tech professionals prepare for Cloud Engineering, DevOps, and ML interviews — in English or Spanish, with real-time feedback and personal progress tracking.
 
-[Live Demo](https://s29p98hewv.us-east-1.awsapprunner.com) · [Architecture](#architecture) · [Quickstart](#quickstart)
+[Live Demo](https://9dkx2gnjif.us-east-1.awsapprunner.com) · [Architecture](#architecture) · [Quickstart](#quickstart)
 
 </div>
 
