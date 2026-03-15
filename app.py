@@ -41,27 +41,27 @@ async def validate_nova_sonic_on_startup():
     dev_mode = os.getenv('ENABLE_DEV_MODE', 'false').lower() == 'true'
     
     if dev_mode:
-        logger.info("🔧 Development mode enabled - using mock audio")
+        logger.info("Development mode enabled - using mock audio")
         logger.info("   Nova Sonic validation skipped")
         return
     
-    logger.info("🔍 Validating Nova Sonic connectivity...")
+    logger.info("Validating Nova Sonic connectivity...")
     
     try:
         client = NovaSonicClient()
         is_available = client.validate_model_availability()
         
         if is_available:
-            logger.info("✅ Nova Sonic is available")
+            logger.info("Nova Sonic is available")
             logger.info(f"   Model: {client.get_model_id()}")
             logger.info(f"   Region: {client.get_region()}")
         else:
-            logger.error("❌ Nova Sonic is not available")
+            logger.error("Nova Sonic is not available")
             logger.error("   Voice features will be degraded")
             logger.error("   Check AWS region, credentials, and model availability")
             
     except Exception as e:
-        logger.error(f"❌ Failed to validate Nova Sonic connectivity: {str(e)}")
+        logger.error(f"Failed to validate Nova Sonic connectivity: {str(e)}")
         logger.error("   Voice features may not work correctly")
 
 
@@ -544,8 +544,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         handler = WebSocketHandler(websocket, session_id)
         await handler.handle_connection()
     except Exception as e:
-        import json
-        logger.error(f"WebSocket handler error: {e}", exc_info=True)
+        import json, logging as _logging
+        _logging.getLogger(__name__).error(f"WebSocket handler error: {e}", exc_info=True)
         try:
             await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
             await websocket.close()
@@ -565,25 +565,25 @@ if __name__ == "__main__":
         dev_mode = os.getenv('ENABLE_DEV_MODE', 'false').lower() == 'true'
         
         if dev_mode:
-            print("🔧 Development mode enabled - using mock audio")
+            print("Development mode enabled - using mock audio")
             return True
         
-        print("🔍 Validating Nova Sonic connectivity...")
-        
+        print("Validating Nova Sonic connectivity...")
+
         try:
             client = NovaSonicClient()
             is_available = client.validate_model_availability()
-            
+
             if is_available:
-                print("✅ Nova Sonic is available")
+                print("Nova Sonic is available")
                 return True
             else:
-                print("❌ ERROR: Nova Sonic is not available")
+                print("ERROR: Nova Sonic is not available")
                 print("   Enable dev mode or fix AWS configuration")
                 return False
-                
+
         except Exception as e:
-            print(f"❌ ERROR: Failed to validate Nova Sonic: {str(e)}")
+            print(f"ERROR: Failed to validate Nova Sonic: {str(e)}")
             return False
     
     # Run validation

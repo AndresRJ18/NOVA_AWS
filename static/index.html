@@ -3247,7 +3247,7 @@ window._startRecording = async function() {
 
     // ── Web Speech API fallback ───────────────────────────────
     if (!_srAvailable()) {
-        console.warn('[voice] SpeechRecognition not supported in this browser');
+        _showVoiceUnavailable();
         return;
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -3267,7 +3267,13 @@ window._startRecording = async function() {
         }
     };
     _speechRec.onend  = _srDone;
-    _speechRec.onerror = (e) => { console.error('[voice] SR error:', e.error); _srDone(); };
+    _speechRec.onerror = (e) => {
+        console.error('[voice] SR error:', e.error);
+        if (e.error === 'network' || e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            _showVoiceUnavailable();
+        }
+        _srDone();
+    };
 
     try {
         _speechRec.start();
@@ -3353,6 +3359,25 @@ window._playFeedbackAudio = async function(text) {
     } catch (e) {}
 };
 
+function _showVoiceUnavailable() {
+    const lang = (typeof sessionConfig !== 'undefined' && sessionConfig.language === 'es') ? 'es' : 'en';
+    const msg = lang === 'es'
+        ? 'Voz no disponible. Escribe tu respuesta en el campo de texto.'
+        : 'Voice unavailable. Please type your answer in the text field.';
+    const existing = document.getElementById('voiceUnavailableBanner');
+    if (existing) return;
+    const banner = document.createElement('div');
+    banner.id = 'voiceUnavailableBanner';
+    banner.style.cssText = 'padding:8px 16px;background:#2d2d2d;color:#aaa;font-size:13px;text-align:center;border-top:1px solid #333;';
+    banner.textContent = msg;
+    const btnRecord = document.getElementById('btnRecord');
+    if (btnRecord) {
+        btnRecord.disabled = true;
+        btnRecord.title = msg;
+        btnRecord.insertAdjacentElement('afterend', banner);
+    }
+}
+
 window._connectVoice = async function(sid) {
     if (!audioCapture) initVoice();
     try {
@@ -3382,6 +3407,7 @@ window._connectVoice = async function(sid) {
         console.log('[voice] WebSocket connected for session', sid);
     } catch (e) {
         console.error('[voice] WebSocket connect failed:', e.message);
+        // Nova Sonic unavailable — Web Speech API fallback will be used when mic is clicked
     }
 };
 
