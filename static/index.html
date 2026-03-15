@@ -3285,15 +3285,15 @@ window._startRecording = async function() {
     }
 };
 
-window._stopRecording = function() {
+window._stopRecording = async function() {
     // ── Nova Sonic path ───────────────────────────────────────
     if (wsClient && wsClient.isConnected()) {
         if (!_capturing || !audioCapture) return;
         _capturing = false;
         _stopVolumePoll();
         try {
-            const audioData = audioCapture.stopCapture();
-            if (audioData) {
+            const audioData = await audioCapture.stopCapture();
+            if (audioData && audioData.byteLength > 0) {
                 wsClient.sendAudio(audioData, audioCapture.getAudioFormat().format);
                 setStatus('transcribing');
             } else {

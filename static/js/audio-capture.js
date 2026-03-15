@@ -226,12 +226,19 @@ export class AudioCapture {
      * Stop capturing audio and return complete audio data
      * @returns {ArrayBuffer} Complete audio data as 16-bit PCM
      */
-    stopCapture() {
+    async stopCapture() {
         if (!this.isCapturing) {
             throw new Error('Not currently capturing audio');
         }
 
         this.isCapturing = false;
+
+        // Flush any partial buffer from AudioWorklet before disconnecting
+        if (this.processorNode && this.processorNode.port) {
+            this.processorNode.port.postMessage('flush');
+            // Give the worklet one event-loop tick to deliver the flush message
+            await new Promise(r => setTimeout(r, 50));
+        }
 
         // Disconnect and cleanup audio nodes
         if (this.processorNode) {

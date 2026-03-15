@@ -44,10 +44,12 @@ class AudioQualityValidator:
     """
     
     # Validation thresholds
-    SILENCE_THRESHOLD = 0.05  # 5% of max amplitude
-    SILENCE_PERCENTAGE_THRESHOLD = 0.95  # 95% of samples
-    CLIPPING_PERCENTAGE_THRESHOLD = 0.01  # 1% of samples
-    MIN_DURATION_SECONDS = 1.0
+    # Intentionally permissive: Nova Sonic handles short/quiet audio gracefully.
+    # Only block audio that is provably empty or corrupted.
+    SILENCE_THRESHOLD = 0.005          # 0.5% of max amplitude (was 5%)
+    SILENCE_PERCENTAGE_THRESHOLD = 0.999  # 99.9% silent (was 95%)
+    CLIPPING_PERCENTAGE_THRESHOLD = 0.01   # 1% of samples
+    MIN_DURATION_SECONDS = 0.25        # 1 AudioWorklet buffer ≈ 256 ms (was 1.0 s)
     
     # Audio format assumptions for PCM
     SAMPLE_RATE = 16000  # Hz
