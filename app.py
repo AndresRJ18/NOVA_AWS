@@ -538,13 +538,19 @@ async def get_question_audio(session_id: str):
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time audio streaming."""
-    from mock_interview_coach.voice_interface import WebSocketHandler
-
-    # Create WebSocket handler
-    handler = WebSocketHandler(websocket, session_id)
-
-    # Handle connection lifecycle
-    await handler.handle_connection()
+    await websocket.accept()
+    try:
+        from mock_interview_coach.voice_interface import WebSocketHandler
+        handler = WebSocketHandler(websocket, session_id)
+        await handler.handle_connection()
+    except Exception as e:
+        import json
+        logger.error(f"WebSocket handler error: {e}", exc_info=True)
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            await websocket.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
