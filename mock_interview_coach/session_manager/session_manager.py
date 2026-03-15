@@ -107,12 +107,12 @@ class SessionManager:
             performance = self._difficulty_adjuster.analyze_performance(
                 self._current_session.evaluations
             )
-            
+
             # Get difficulty hint
             difficulty_hint = self._difficulty_adjuster.get_next_difficulty_hint(
                 self._current_session.evaluations
             )
-            
+
             # Generate dynamic question
             try:
                 question = self._question_generator.generate_dynamic_question(
@@ -125,8 +125,19 @@ class SessionManager:
                 print(f"Dynamic generation failed: {e}, falling back to static")
                 question = self._question_generator.get_next_question()
         else:
-            # Use static questions for first question or if adaptive mode disabled
+            # Use static questions for first question (or if adaptive mode disabled).
+            # If static bank is empty for this role/level combo, generate dynamically.
             question = self._question_generator.get_next_question()
+            if question is None and self._use_adaptive_mode:
+                try:
+                    question = self._question_generator.generate_dynamic_question(
+                        difficulty_hint="same",
+                        weak_areas=[],
+                        previous_questions=self._current_session.questions
+                    )
+                except Exception as e:
+                    print(f"Dynamic generation failed for first question: {e}")
+                    question = None
         
         if question:
             self._current_session.questions.append(question)

@@ -368,27 +368,53 @@ class WebSocketHandler:
             )
             await self.send_error("Internal error processing audio", "internal_error")
     
+    async def send_question_audio(self, question_text: str, language: str = "en") -> None:
+        """Synthesize TTS for a question and send audio to client.
+
+        Args:
+            question_text: The question text to synthesize
+            language: Language code ('en' or 'es')
+        """
+        try:
+            audio_data = await self.nova_client.synthesize_speech(
+                text=question_text,
+                language=language,
+                session_id=self.session_id
+            )
+            if audio_data:
+                await self.send_audio(audio_data, audio_format="mp3")
+                logger.info(
+                    f"Sent question audio: length={len(audio_data)} bytes",
+                    extra={"session_id": self.session_id}
+                )
+        except Exception as e:
+            # TTS failure is non-fatal — client can read the text
+            logger.warning(
+                f"Question TTS synthesis failed (non-fatal): {e}",
+                extra={"session_id": self.session_id, "error": str(e)}
+            )
+
     async def handle_text_message(self, message: Dict[str, Any]) -> None:
         """Handle incoming text message for evaluation.
-        
+
         This method processes text input from the client (text fallback mode)
         and echoes it back as a transcript for evaluation pipeline.
-        
+
         Args:
             message: Message dict with 'text' field
         """
         try:
             text = message.get("text", "").strip()
-            
+
             if not text:
                 await self.send_error("Text cannot be empty", "empty_text")
                 return
-            
+
             logger.info(
                 f"Received text message: length={len(text)}",
                 extra={"session_id": self.session_id, "text_length": len(text)}
             )
-            
+
             # In text mode, we just echo back the text as a transcript
             # The evaluation pipeline will handle it the same way
             await self.send_transcript(text)

@@ -1,7 +1,15 @@
-# Environment variables
+# ── Secrets & environment ────────────────────────────────────
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+aws_credentials
 
-# Python
+# ── Python ───────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -22,21 +30,19 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Virtual environments
+# ── Virtual environments ──────────────────────────────────────
 .venv/
 venv/
 ENV/
 env/
+env.bak/
+venv.bak/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Testing
+# ── Testing & coverage ────────────────────────────────────────
 .pytest_cache/
 .hypothesis/
 htmlcov/
@@ -44,30 +50,96 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+*.py,cover
+nosetests.xml
+test-results/
+junit*.xml
 
-# Logs
-*.log
+# ── Type checkers ─────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
 
-# OS
+# ── IDE & editors ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# ── OS ────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Development/Task tracking files
-TASK_*.md
-*_SUMMARY.md
-*_COMPLETE.md
+# ── Logs & runtime artifacts ──────────────────────────────────
+*.log
+*.log.*
+logs/
 metrics_data.json
-test_startup_manual.py
-test_nova_sonic.py
 
-# Kiro files
-.kiro/
-
-# Reports (PDFs generated at runtime)
+# ── Generated reports (created at runtime) ───────────────────
 reports/*.pdf
 !reports/.gitkeep
 
-# Test HTML files
+# ── Audio artifacts ───────────────────────────────────────────
+*.mp3
+*.wav
+*.ogg
+*.opus
+*.webm
+test_sonic_output.*
+
+# ── Docker ────────────────────────────────────────────────────
+.dockerignore
+
+# ── Node (if any frontend tooling is added) ───────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
+.npm/
+
+# ── Jupyter ───────────────────────────────────────────────────
+.ipynb_checkpoints
+*.ipynb
+
+# ── Misc development files ────────────────────────────────────
+TASK_*.md
+*_SUMMARY.md
+*_COMPLETE.md
+*.bak
+*.tmp
+*.orig
+scratch/
+sandbox/
+
+# ── Kiro / AI tools ───────────────────────────────────────────
+.kiro/
+.claude/
+CLAUDE.md
+NEXT_STEPS.md
+
+# ── Local test scripts ────────────────────────────────────────
+test_sonic.py
+
+# ── Test HTML stubs ───────────────────────────────────────────
 static/test-*.html
 static/index_new.html
 static/index_professional.html
+static/js/*-test.html
+static/js/test-*.html

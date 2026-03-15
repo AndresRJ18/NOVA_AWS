@@ -1,7 +1,7 @@
 """Voice Interface module for audio I/O."""
 
 from .voice_interface import VoiceInterface
-from .nova_sonic_client import NovaSonicClient, NovaSonicConfig, VoiceErrorCode
+from .nova_sonic_client import NovaSonicClient, NovaSonicSession
 from .audio_converter import AudioConverter, AudioFormat, AudioProperties
 from .audio_quality_validator import AudioQualityValidator, AudioIssue, ValidationResult
 from .websocket_handler import WebSocketHandler, MessageType
@@ -12,8 +12,7 @@ from .mock_audio_generator import MockAudioGenerator
 __all__ = [
     'VoiceInterface',
     'NovaSonicClient',
-    'NovaSonicConfig',
-    'VoiceErrorCode',
+    'NovaSonicSession',
     'AudioConverter',
     'AudioFormat',
     'AudioProperties',

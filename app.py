@@ -2,8 +2,10 @@
 
 import os
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,6 +14,12 @@ import json
 
 from mock_interview_coach.session_manager import SessionManager
 from mock_interview_coach.models import Role, Level, Language
+from mock_interview_coach.auth.cognito import (
+    is_cognito_configured,
+    validate_token,
+    exchange_code_for_tokens,
+)
+from mock_interview_coach.auth.dynamo_store import upsert_user, save_session_record, get_user_sessions as _get_user_sessions
 
 
 async def validate_nova_sonic_on_startup():
@@ -84,7 +92,153 @@ class SessionConfig(BaseModel):
     level: str
     language: str
     demo_mode: bool = False
+    user_id: Optional[str] = None
 
+
+# ── Auth dependency ──────────────────────────────────────────────────────────
+
+async def optional_current_user(
+    authorization: Optional[str] = Header(None),
+) -> Optional[dict]:
+    """Non-breaking auth dependency — returns None when Cognito is absent."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    if not is_cognito_configured():
+        return None
+    try:
+        return validate_token(authorization.split(" ", 1)[1])
+    except ValueError:
+        return None
+
+
+# ── Auth routes ─────────────────────────────────────────────────────────────
+
+@app.get("/auth/config")
+async def auth_config():
+    """Return Cognito configuration for the frontend."""
+    if not is_cognito_configured():
+        return {"enabled": False}
+
+    redirect_uri = os.getenv(
+        "COGNITO_REDIRECT_URI", "http://localhost:8000/auth/callback"
+    )
+    return {
+        "enabled": True,
+        "client_id": os.getenv("COGNITO_CLIENT_ID"),
+        "domain": os.getenv("COGNITO_DOMAIN", "").rstrip("/"),
+        "redirect_uri": redirect_uri,
+    }
+
+
+@app.get("/auth/callback")
+async def auth_callback_redirect():
+    """Serve index.html so the frontend JS can pick up ?code= from the URL."""
+    return FileResponse("static/index.html")
+
+
+@app.post("/auth/callback")
+async def auth_callback(body: dict):
+    """Exchange authorization code for tokens, upsert user in DynamoDB."""
+    if not is_cognito_configured():
+        return {"error": "Auth not configured"}, 400
+
+    code = body.get("code")
+    redirect_uri = body.get("redirect_uri")
+    code_verifier = body.get("code_verifier")
+
+    if not code or not redirect_uri or not code_verifier:
+        return {"error": "Missing required fields"}, 400
+
+    try:
+        tokens = await exchange_code_for_tokens(code, redirect_uri, code_verifier)
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    id_token = tokens.get("id_token")
+    if not id_token:
+        return {"error": "No id_token in response"}, 400
+
+    try:
+        claims = validate_token(id_token, access_token=tokens.get("access_token"))
+    except ValueError as exc:
+        return {"error": str(exc)}, 401
+
+    user = {
+        "user_id": claims.get("sub"),
+        "email": claims.get("email", ""),
+        "name": claims.get("given_name") or claims.get("name") or claims.get("cognito:username", ""),
+        "picture": claims.get("picture", ""),
+    }
+
+    upsert_user(
+        user_id=user["user_id"],
+        email=user["email"],
+        name=user["name"],
+        picture=user["picture"],
+    )
+
+    return {"id_token": id_token, "user": user}
+
+
+@app.get("/auth/user")
+async def auth_user(current_user: Optional[dict] = Depends(optional_current_user)):
+    """Return the currently authenticated user from the Bearer token."""
+    if not current_user:
+        return {"error": "Unauthorized"}, 401
+
+    return {
+        "user_id": current_user.get("sub"),
+        "email": current_user.get("email", ""),
+        "name": current_user.get("name", current_user.get("cognito:username", "")),
+        "picture": current_user.get("picture", ""),
+    }
+
+
+@app.get("/api/user/{user_id}/sessions")
+async def get_user_sessions_endpoint(
+    user_id: str,
+    current_user: Optional[dict] = Depends(optional_current_user),
+):
+    """Return the session history for a user.
+
+    When Cognito is configured the caller must be the owner (sub == user_id).
+    In demo/unconfigured mode this returns an empty list.
+    """
+    from fastapi import HTTPException
+    if is_cognito_configured():
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if current_user.get("sub") != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    sessions = _get_user_sessions(user_id)
+    return {"sessions": sessions}
+
+
+@app.get("/auth/logout")
+async def auth_logout():
+    """Return the Cognito logout URL."""
+    if not is_cognito_configured():
+        return {"logout_url": "/"}
+
+    domain = os.getenv("COGNITO_DOMAIN", "").rstrip("/")
+    client_id = os.getenv("COGNITO_CLIENT_ID")
+    redirect_uri = os.getenv("COGNITO_REDIRECT_URI", "http://localhost:8000")
+
+    # Strip path from redirect_uri to get just the origin
+    from urllib.parse import urlparse
+    parsed = urlparse(redirect_uri)
+    logout_redirect = f"{parsed.scheme}://{parsed.netloc}"
+
+    logout_url = (
+        f"{domain}/logout"
+        f"?client_id={client_id}"
+        f"&logout_uri={logout_redirect}"
+    )
+    return {"logout_url": logout_url}
+
+
+# ── Main routes ──────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():
@@ -107,7 +261,9 @@ async def start_session(config: SessionConfig):
         active_sessions[session_id] = {
             "role": config.role,
             "level": config.level,
-            "language": config.language
+            "language": config.language,
+            "user_id": config.user_id,
+            "demo_mode": config.demo_mode,
         }
         
         return {
@@ -127,6 +283,10 @@ async def get_question(session_id: str):
         if question is None:
             return {"question": None, "message": "No more questions"}
         
+        # Cache current question text for the /question/audio endpoint
+        if session_id in active_sessions:
+            active_sessions[session_id]["current_question_text"] = question.text
+
         return {
             "question_id": question.id,
             "text": question.text,
@@ -198,12 +358,30 @@ async def end_session(session_id: str):
         
         # Count questions answered
         questions_answered = len(report.questions_and_responses)
-        
+
+        area_scores_serialized = {k.value: v for k, v in report.area_scores.items()}
+
+        # Persist session record to DynamoDB (silent no-op when unconfigured)
+        session_meta = active_sessions.get(session_id, {})
+        try:
+            save_session_record(
+                user_id=session_meta.get("user_id") or "anonymous",
+                session_id=session_id,
+                role=session_meta.get("role", ""),
+                level=session_meta.get("level", ""),
+                language=session_meta.get("language", ""),
+                overall_score=report.overall_score,
+                area_scores=area_scores_serialized,
+                demo=session_meta.get("demo_mode", False),
+            )
+        except Exception:
+            pass  # DynamoDB errors must never break the response
+
         return {
             "overall_score": report.overall_score,
             "final_score": report.overall_score,  # Add explicit final_score field
             "questions_answered": questions_answered,
-            "area_scores": {k.value: v for k, v in report.area_scores.items()},
+            "area_scores": area_scores_serialized,
             "pdf_url": f"/api/report/{session_id}"
         }
     except Exception as e:
@@ -292,14 +470,79 @@ async def health_check():
         )
 
 
+@app.post("/api/tts")
+async def text_to_speech(body: dict):
+    """Generic TTS endpoint — converts arbitrary text to MP3 via Amazon Polly.
+
+    Used by the frontend to read feedback aloud after each evaluation.
+    Returns 204 in dev mode (silent fallback).
+    """
+    from fastapi.responses import Response
+
+    if os.getenv("ENABLE_DEV_MODE", "false").lower() == "true":
+        return Response(status_code=204)
+
+    text = body.get("text", "").strip()
+    language = body.get("language", "en")
+    if not text:
+        return Response(status_code=204)
+
+    try:
+        from mock_interview_coach.voice_interface import NovaSonicClient
+        client = NovaSonicClient()
+        audio_data = await client.synthesize_speech(text=text, language=language)
+        if not audio_data:
+            return Response(status_code=204)
+        return Response(content=audio_data, media_type="audio/mpeg")
+    except Exception as e:
+        return Response(status_code=204)  # Non-fatal — client shows text regardless
+
+
+@app.get("/api/session/{session_id}/question/audio")
+async def get_question_audio(session_id: str):
+    """Synthesize TTS audio for the current question.
+
+    Returns an MP3 audio file of the current question being spoken.
+    Falls back to 404 when TTS is unavailable (dev mode / no AWS).
+    """
+    from fastapi.responses import Response
+
+    # In dev mode there is no real TTS — return 204 so the frontend skips playback
+    if os.getenv("ENABLE_DEV_MODE", "false").lower() == "true":
+        return Response(status_code=204)
+
+    try:
+        session_info = active_sessions.get(session_id, {})
+        language = session_info.get("language", "en")
+        question_text = session_info.get("current_question_text")
+        if not question_text:
+            return Response(status_code=204)
+
+        from mock_interview_coach.voice_interface import NovaSonicClient
+        client = NovaSonicClient()
+        audio_data = await client.synthesize_speech(
+            text=question_text,
+            language=language,
+            session_id=session_id
+        )
+
+        if not audio_data:
+            return Response(status_code=204)
+
+        return Response(content=audio_data, media_type="audio/mpeg")
+
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time audio streaming."""
     from mock_interview_coach.voice_interface import WebSocketHandler
-    
+
     # Create WebSocket handler
     handler = WebSocketHandler(websocket, session_id)
-    
+
     # Handle connection lifecycle
     await handler.handle_connection()
 

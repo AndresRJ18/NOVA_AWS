@@ -290,6 +290,9 @@ export class RecordingUI {
             // Stop volume updates
             this._stopVolumeUpdates();
 
+            // Reset volume bar in parent page
+            if (window._updateVolumeDisplay) window._updateVolumeDisplay(0);
+
             // Stop audio capture and get complete audio
             const audioData = this.audioCapture.stopCapture();
 
@@ -424,7 +427,10 @@ export class RecordingUI {
      */
     _updateVolumeDisplay(volumeLevel) {
         this.state.volumeLevel = volumeLevel;
-        
+
+        // Forward to parent page volume bar (new UI)
+        if (window._updateVolumeDisplay) window._updateVolumeDisplay(volumeLevel);
+
         // Update volume bar width
         if (this.elements.volumeBar) {
             this.elements.volumeBar.style.width = `${volumeLevel}%`;

@@ -1,18 +1,25 @@
-# AWS SDK for Bedrock
+# AWS SDK
 boto3>=1.34.0
-python-dotenv>=1.0.0
 
-# PDF Generation
-reportlab>=4.0.0
+# Nova Sonic bidirectional streaming (requires Python 3.12+)
+aws-sdk-bedrock-runtime>=0.4.0
 
-# Web Framework
+# Web framework
 fastapi>=0.104.0
 uvicorn>=0.24.0
-websockets>=12.0
-mangum>=0.17.0  # For Vercel serverless deployment
+websockets>=12.0,<14.0
 
-# Audio Processing
+# Auth (JWT validation for Cognito RS256)
+python-jose[cryptography]>=3.3.0
+
+# PDF generation
+reportlab>=4.0.0
+
+# Audio processing
 pydub>=0.25.1
+
+# Environment
+python-dotenv>=1.0.0
 
 # Testing
 pytest>=7.4.0

@@ -49,14 +49,16 @@ class AudioConverter:
     
     def __init__(self):
         """Initialize AudioConverter.
-        
-        Raises:
-            RuntimeError: If pydub is not installed.
+
+        Does not raise if pydub is unavailable — conversion methods will raise
+        only if actually called without pydub present (e.g. dev mode is fine).
         """
         if not PYDUB_AVAILABLE:
-            raise RuntimeError(
-                "pydub is required for audio conversion. "
-                "Install with: pip install pydub"
+            import logging
+            logging.getLogger(__name__).warning(
+                "pydub not available (Python 3.13+ removed audioop). "
+                "Audio format conversion is disabled. "
+                "Voice recording in PCM/Opus format will still work."
             )
     
     def convert_to_pcm(self, audio_data: bytes, source_format: str) -> bytes:

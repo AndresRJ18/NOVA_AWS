@@ -284,6 +284,14 @@ export class WebSocketClient {
                     this.lastPongTime = Date.now();
                     break;
 
+                case 'ping':
+                    // Server heartbeat — respond with pong
+                    this.lastPongTime = Date.now();
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+                    }
+                    break;
+
                 default:
                     console.warn('Unknown message type:', message.type);
             }

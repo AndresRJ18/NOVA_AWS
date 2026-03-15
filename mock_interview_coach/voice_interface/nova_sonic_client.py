@@ -1,548 +1,534 @@
-"""Nova Sonic Client for AWS Bedrock integration.
+"""Nova Sonic Client — real bidirectional streaming via aws-sdk-bedrock-runtime.
 
-This module provides the NovaSonicClient class for interfacing with Amazon Nova Sonic
-models on AWS Bedrock for speech-to-text and text-to-speech operations.
+Uses the experimental AWS SDK (awslabs/aws-sdk-python) which is the ONLY Python SDK
+that supports InvokeModelWithBidirectionalStream.  boto3 does NOT support this API.
 """
 
 import os
+import asyncio
 import base64
 import json
 import logging
-import asyncio
-from typing import Optional, Dict, Any, Callable, TypeVar
-from dataclasses import dataclass
-from enum import Enum
-from datetime import datetime
-import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+import uuid
+from typing import Optional, Callable, Awaitable
 from dotenv import load_dotenv
 
 from mock_interview_coach.models import Language
 from mock_interview_coach.voice_interface.mock_audio_generator import MockAudioGenerator
 
-# Load environment variables
 load_dotenv()
-
-# Configure logger
 logger = logging.getLogger(__name__)
-
-T = TypeVar('T')
-
-
-class VoiceErrorCode(Enum):
-    """Voice-specific error codes."""
-    # API errors
-    NOVA_SONIC_UNAVAILABLE = "nova_sonic_unavailable"
-    NOVA_SONIC_TIMEOUT = "nova_sonic_timeout"
-    NOVA_SONIC_ERROR = "nova_sonic_error"
-    TRANSCRIPTION_EMPTY = "transcription_empty"
-    MODEL_NOT_AVAILABLE = "model_not_available"
-
-    # Configuration errors
-    INVALID_CONFIGURATION = "invalid_configuration"
-    MISSING_CREDENTIALS = "missing_credentials"
-    
-    # Network errors
-    CONNECTION_ERROR = "connection_error"
-    RETRY_EXHAUSTED = "retry_exhausted"
-
-
-
-@dataclass
-class NovaSonicConfig:
-    """Configuration for Nova Sonic client."""
-    model_id: str = "amazon.nova-sonic-v1:0"
-    region: str = "us-east-1"
-    max_retries: int = 2
-    timeout_seconds: int = 30
-    input_sample_rate: int = 16000
-    output_format: str = "mp3"  # or "opus"
 
 
 class NovaSonicClient:
-    """Client for interfacing with AWS Bedrock Nova Sonic API.
-    
-    This client handles both speech-to-text (transcription) and text-to-speech
-    (synthesis) operations using Amazon Nova Sonic models.
-    
-    Attributes:
-        config: Configuration for the Nova Sonic client
-        _bedrock_runtime: AWS Bedrock Runtime client
+    """Bidirectional streaming client for Amazon Nova Sonic.
+
+    Wraps the aws-sdk-bedrock-runtime experimental SDK.
+    Falls back to MockAudioGenerator when ENABLE_DEV_MODE=true.
     """
-    
+
+    MODEL_ID = "amazon.nova-sonic-v1:0"
+
+    # System prompt tailored for mock interview coach
+    SYSTEM_PROMPT_EN = (
+        "You are Nova, an expert technical interviewer for cloud, DevOps, and ML engineer roles. "
+        "You ask one focused technical question at a time, listen carefully to the candidate's answer, "
+        "and give brief, constructive spoken feedback (2-3 sentences max). "
+        "Be professional but encouraging. Speak naturally — this is a real-time voice interview."
+    )
+
+    SYSTEM_PROMPT_ES = (
+        "Eres Nova, un entrevistador técnico experto para roles de Cloud, DevOps e ingeniería ML. "
+        "Haces una pregunta técnica a la vez, escuchas con atención la respuesta del candidato "
+        "y das retroalimentación breve y constructiva (máximo 2-3 oraciones). "
+        "Sé profesional pero alentador. Habla con naturalidad — esto es una entrevista de voz en tiempo real."
+    )
+
     def __init__(
         self,
         model_id: Optional[str] = None,
         region: Optional[str] = None,
-        config: Optional[NovaSonicConfig] = None
     ):
-        """Initialize the Nova Sonic client.
-        
-        Args:
-            model_id: Nova Sonic model ID (overrides config and env var)
-            region: AWS region (overrides config and env var)
-            config: Complete configuration object (optional)
-            
-        Raises:
-            ValueError: If AWS credentials are not configured (unless dev mode is enabled)
-        """
-        # Check if development mode is enabled
-        self.dev_mode = os.getenv('ENABLE_DEV_MODE', 'false').lower() == 'true'
-        
-        # Initialize configuration
-        if config:
-            self.config = config
-        else:
-            self.config = NovaSonicConfig(
-                model_id=model_id or os.getenv('NOVA_SONIC_MODEL_ID', 'amazon.nova-sonic-v1:0'),
-                region=region or os.getenv('AWS_REGION', 'us-east-1'),
-                max_retries=int(os.getenv('NOVA_SONIC_MAX_RETRIES', '2')),
-                timeout_seconds=int(os.getenv('NOVA_SONIC_TIMEOUT', '30')),
-                output_format=os.getenv('NOVA_SONIC_OUTPUT_FORMAT', 'mp3')
-            )
-        
-        # Initialize mock audio generator if in dev mode
+        self.model_id = model_id or os.getenv("NOVA_SONIC_MODEL_ID", self.MODEL_ID)
+        self.region = region or os.getenv("AWS_REGION", "us-east-1")
+        self.dev_mode = os.getenv("ENABLE_DEV_MODE", "false").lower() == "true"
+
+        self._bedrock_client = None   # lazy-init (requires credentials)
+        self.mock_audio_generator = MockAudioGenerator() if self.dev_mode else None
+
+    # ── Public helpers (used by app.py health check / startup) ────────────
+
+    def get_model_id(self) -> str:
+        return self.model_id
+
+    def get_region(self) -> str:
+        return self.region
+
+    def validate_model_availability(self) -> bool:
         if self.dev_mode:
-            self.mock_audio_generator = MockAudioGenerator()
-            logger.info("🔧 Development mode enabled - using mock audio instead of Nova Sonic API")
-            logger.info(f"📁 Mock audio directory: {self.mock_audio_generator.mock_audio_dir}")
-            
-            # Log available mock files
-            available_mocks = self.mock_audio_generator.get_available_mock_files()
-            logger.info(f"📝 Available mock audio files: {len(available_mocks)}")
-            for phrase_key in available_mocks.keys():
-                logger.debug(f"  - {phrase_key}.mp3")
-            
-            # Skip AWS credential validation in dev mode
-            self._bedrock_runtime = None
-            return
-        
-        # Validate credentials (only in production mode)
-        aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
-        aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-        
-        if not aws_access_key or not aws_secret_key:
-            raise ValueError(
-                "AWS credentials not configured. Please set AWS_ACCESS_KEY_ID "
-                "and AWS_SECRET_ACCESS_KEY environment variables."
-            )
-        
-        # Initialize AWS Bedrock Runtime client
+            return True
         try:
-            self._bedrock_runtime = boto3.client(
-                'bedrock-runtime',
-                region_name=self.config.region,
-                aws_access_key_id=aws_access_key,
-                aws_secret_access_key=aws_secret_key
-            )
+            import boto3
+            # sts:GetCallerIdentity works with any valid credentials —
+            # no explicit IAM permission required.
+            boto3.client("sts", region_name=self.region).get_caller_identity()
+            return bool(self.model_id)
         except Exception as e:
-            raise ValueError(f"Failed to initialize AWS Bedrock client: {str(e)}")
-    
-    async def _call_with_retry(
-        self,
-        operation: Callable[[], T],
-        operation_name: str,
-        session_id: Optional[str] = None
-    ) -> T:
-        """Call an operation with exponential backoff retry logic.
-        
-        This method wraps API calls to Nova Sonic with automatic retry logic
-        for transient errors like timeouts and connection errors.
-        
-        Args:
-            operation: The operation to execute (should be a callable)
-            operation_name: Name of the operation for logging (e.g., "transcribe_audio")
-            session_id: Optional session ID for context logging
-            
-        Returns:
-            The result of the operation
-            
-        Raises:
-            RuntimeError: If all retry attempts are exhausted
-        """
-        max_attempts = self.config.max_retries + 1  # +1 for initial attempt
-        last_exception = None
-        
-        for attempt in range(max_attempts):
-            try:
-                # Log attempt
-                context = {
-                    "operation": operation_name,
-                    "attempt": attempt + 1,
-                    "max_attempts": max_attempts,
-                    "timestamp": datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat(),
-                }
-                if session_id:
-                    context["session_id"] = session_id
-                
-                if attempt > 0:
-                    logger.info(f"Retrying {operation_name} (attempt {attempt + 1}/{max_attempts})", extra=context)
-                
-                # Execute operation
-                result = operation()
-                
-                # Log success if this was a retry
-                if attempt > 0:
-                    logger.info(f"{operation_name} succeeded on attempt {attempt + 1}", extra=context)
-                
-                return result
-                
-            except (ClientError, BotoCoreError) as e:
-                last_exception = e
-                
-                # Determine if error is retryable
-                is_timeout = False
-                is_connection_error = False
-                
-                if isinstance(e, ClientError):
-                    error_code = e.response.get('Error', {}).get('Code', '')
-                    is_timeout = 'Timeout' in error_code or 'RequestTimeout' in error_code
-                    is_connection_error = 'ServiceUnavailable' in error_code or 'ThrottlingException' in error_code
-                elif isinstance(e, BotoCoreError):
-                    is_connection_error = True
-                
-                # Log error with context
-                error_context = {
-                    **context,
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                    "is_timeout": is_timeout,
-                    "is_connection_error": is_connection_error,
-                }
-                logger.error(f"{operation_name} failed on attempt {attempt + 1}", extra=error_context)
-                
-                # Only retry for timeout and connection errors
-                if not (is_timeout or is_connection_error):
-                    logger.warning(f"{operation_name} failed with non-retryable error", extra=error_context)
-                    raise
-                
-                # If this was the last attempt, raise
-                if attempt >= max_attempts - 1:
-                    logger.error(
-                        f"{operation_name} exhausted all {max_attempts} retry attempts",
-                        extra=error_context
-                    )
-                    raise RuntimeError(
-                        f"{operation_name} failed after {max_attempts} attempts. "
-                        f"Last error: {str(e)}. "
-                        f"Error code: {VoiceErrorCode.RETRY_EXHAUSTED.value}"
-                    )
-                
-                # Calculate exponential backoff delay: 1s, 2s
-                delay = 2 ** attempt  # 2^0=1s, 2^1=2s
-                logger.info(f"Waiting {delay}s before retry", extra=error_context)
-                await asyncio.sleep(delay)
-            
-            except Exception as e:
-                # Non-retryable exception, log and re-raise immediately
-                error_context = {
-                    **context,
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                }
-                logger.error(f"{operation_name} failed with unexpected error", extra=error_context)
-                raise
-        
-        # This should never be reached, but just in case
-        raise RuntimeError(
-            f"{operation_name} failed after {max_attempts} attempts. "
-            f"Last error: {str(last_exception)}. "
-            f"Error code: {VoiceErrorCode.RETRY_EXHAUSTED.value}"
+            logger.warning(f"validate_model_availability failed: {e}")
+            return False
+
+    async def health_check(self) -> bool:
+        return self.validate_model_availability()
+
+    # ── SDK client (lazy) ─────────────────────────────────────────────────
+
+    def _get_bedrock_client(self):
+        if self._bedrock_client is not None:
+            return self._bedrock_client
+
+        from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
+        from aws_sdk_bedrock_runtime.config import Config
+        from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
+
+        config = Config(
+            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
+            region=self.region,
+            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
         )
-    
+        self._bedrock_client = BedrockRuntimeClient(config=config)
+        return self._bedrock_client
+
+    # ── Session (one per interview question exchange) ─────────────────────
+
+    def create_session(self, language: str = "en") -> "NovaSonicSession":
+        """Create a new streaming session for one interview exchange."""
+        system_prompt = (
+            self.SYSTEM_PROMPT_ES if language == "es" else self.SYSTEM_PROMPT_EN
+        )
+        return NovaSonicSession(
+            client=self._get_bedrock_client(),
+            model_id=self.model_id,
+            system_prompt=system_prompt,
+            language=language,
+        )
+
+    # ── TTS via Amazon Polly (Nova Sonic is speech→speech, not text→speech) ─
+
+    async def synthesize_speech(
+        self,
+        text: str,
+        language: str = "en",
+        session_id: Optional[str] = None,
+    ) -> Optional[bytes]:
+        """Synthesize speech using Amazon Polly.
+
+        Nova Sonic requires audio input to produce audio output (speech-to-speech
+        model). For TTS of interview questions we use Polly instead — same AWS
+        region, no extra credentials needed.
+
+        Returns MP3 bytes, or None on failure.
+        """
+        if self.dev_mode:
+            return self.mock_audio_generator.get_mock_audio(text, Language.ENGLISH)
+
+        try:
+            import boto3
+            # Polly voice: English → Matthew, Spanish → Lucia
+            voice_id = "Lucia" if language == "es" else "Matthew"
+            polly = boto3.client("polly", region_name=self.region)
+            response = polly.synthesize_speech(
+                Text=text,
+                OutputFormat="mp3",
+                VoiceId=voice_id,
+                Engine="neural",
+            )
+            audio_bytes = response["AudioStream"].read()
+            return audio_bytes if audio_bytes else None
+
+        except Exception as e:
+            logger.warning(f"synthesize_speech (Polly) failed: {e}")
+            return None
+
+    # ── Simple one-shot STT (legacy path, not used in streaming mode) ─────
+
     async def transcribe_audio(
         self,
         audio_data: bytes,
         audio_format: str = "pcm",
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> str:
-        """Transcribe audio to text using Nova Sonic.
-        
-        Args:
-            audio_data: Raw audio data bytes
-            audio_format: Audio format (pcm, opus, mp3)
-            session_id: Optional session ID for context logging
-            
-        Returns:
-            Transcribed text
-            
-        Raises:
-            RuntimeError: If transcription fails or returns empty text
+        """Transcribe audio (non-streaming fallback).
+
+        In real deployment the frontend streams via WebSocket + NovaSonicSession.
+        This method is kept for compatibility with tests.
         """
-        # Use mock transcription in dev mode
         if self.dev_mode:
-            logger.debug(f"🔧 Dev mode: Generating mock transcription for {len(audio_data)} bytes")
-            transcription = self.mock_audio_generator.get_mock_transcription(audio_data)
-            logger.info(f"🔧 Dev mode: Mock transcription: {transcription[:50]}...")
-            return transcription
-        
-        def _transcribe() -> str:
-            """Inner function to perform the actual transcription."""
-            # Encode audio data to base64
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-            
-            # Prepare request body for speech-to-text
-            request_body = {
-                "inputModality": "SPEECH",
-                "outputModality": "TEXT",
-                "audioInput": {
-                    "format": audio_format.upper(),
-                    "data": audio_base64
-                }
-            }
-            
-            # Call Nova Sonic API (let exceptions propagate to retry wrapper)
-            response = self._bedrock_runtime.invoke_model(
-                modelId=self.config.model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(request_body)
-            )
-            
-            # Parse response
-            response_body = json.loads(response['body'].read())
-            
-            # Extract transcription
-            transcription = response_body.get('output', {}).get('text', '')
-            
-            # Validate transcription is not empty
-            if not transcription or not transcription.strip():
-                raise RuntimeError(
-                    f"Transcription returned empty text. Error code: {VoiceErrorCode.TRANSCRIPTION_EMPTY.value}"
-                )
-            
-            return transcription.strip()
-        
-        # Use retry wrapper - it will catch ClientError and BotoCoreError
+            return self.mock_audio_generator.get_mock_transcription(audio_data)
+
         try:
-            return await self._call_with_retry(
-                operation=_transcribe,
-                operation_name="transcribe_audio",
-                session_id=session_id
-            )
-        except (ClientError, BotoCoreError) as e:
-            # Convert boto exceptions to RuntimeError with proper error codes
-            if isinstance(e, ClientError):
-                error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-                error_message = e.response.get('Error', {}).get('Message', str(e))
-                raise RuntimeError(
-                    f"Nova Sonic API error ({error_code}): {error_message}. "
-                    f"Error code: {VoiceErrorCode.NOVA_SONIC_ERROR.value}"
-                )
-            else:  # BotoCoreError
-                raise RuntimeError(
-                    f"AWS connection error: {str(e)}. "
-                    f"Error code: {VoiceErrorCode.NOVA_SONIC_UNAVAILABLE.value}"
-                )
-    
-    async def synthesize_speech(
+            session = self.create_session()
+            result = await session.run_stt(audio_data=audio_data)
+            return result or ""
+        except Exception as e:
+            logger.warning(f"transcribe_audio failed: {e}")
+            return ""
+
+
+# ── NovaSonicSession ──────────────────────────────────────────────────────────
+
+class NovaSonicSession:
+    """One bidirectional streaming session with Nova Sonic.
+
+    Lifecycle:
+        session = client.create_session(language)
+        await session.open()
+        await session.send_audio_chunk(pcm_bytes)   # repeat
+        await session.close()
+        # session.transcript  → str
+        # session.audio_out   → bytes (LPCM 24kHz)
+    """
+
+    VOICE_EN = "matthew"
+    VOICE_ES = "pedro"
+
+    def __init__(
         self,
-        text: str,
-        language: Language,
-        output_format: Optional[str] = None,
-        session_id: Optional[str] = None
-    ) -> bytes:
-        """Synthesize speech from text using Nova Sonic.
-        
-        Args:
-            text: Text to synthesize
-            language: Language for speech synthesis
-            output_format: Audio output format (mp3, opus), defaults to config
-            session_id: Optional session ID for context logging
-            
-        Returns:
-            Audio data as bytes
-            
-        Raises:
-            RuntimeError: If synthesis fails
-        """
-        if not text or not text.strip():
-            raise ValueError("Text cannot be empty")
-        
-        # Use mock audio in dev mode
-        if self.dev_mode:
-            logger.debug(f"🔧 Dev mode: Generating mock audio for text: {text[:50]}...")
-            audio_data = self.mock_audio_generator.get_mock_audio(text, language)
-            logger.info(f"🔧 Dev mode: Generated mock audio ({len(audio_data)} bytes)")
-            return audio_data
-        
-        format_to_use = output_format or self.config.output_format
-        
-        def _synthesize() -> bytes:
-            """Inner function to perform the actual synthesis."""
-            # Prepare request body for text-to-speech
-            request_body = {
-                "inputModality": "TEXT",
-                "outputModality": "SPEECH",
-                "textInput": {
-                    "text": text,
-                    "language": language.value
-                },
-                "audioOutput": {
-                    "format": format_to_use.upper()
-                }
-            }
-            
-            # Call Nova Sonic API (let exceptions propagate to retry wrapper)
-            response = self._bedrock_runtime.invoke_model(
-                modelId=self.config.model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(request_body)
-            )
-            
-            # Parse response
-            response_body = json.loads(response['body'].read())
-            
-            # Extract audio data
-            audio_base64 = response_body.get('output', {}).get('audio', {}).get('data', '')
-            
-            if not audio_base64:
-                raise RuntimeError("No audio data in response")
-            
-            # Decode base64 audio
-            audio_data = base64.b64decode(audio_base64)
-            
-            return audio_data
-        
-        # Use retry wrapper - it will catch ClientError and BotoCoreError
-        try:
-            return await self._call_with_retry(
-                operation=_synthesize,
-                operation_name="synthesize_speech",
-                session_id=session_id
-            )
-        except (ClientError, BotoCoreError) as e:
-            # Convert boto exceptions to RuntimeError with proper error codes
-            if isinstance(e, ClientError):
-                error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-                error_message = e.response.get('Error', {}).get('Message', str(e))
-                raise RuntimeError(
-                    f"Nova Sonic API error ({error_code}): {error_message}. "
-                    f"Error code: {VoiceErrorCode.NOVA_SONIC_ERROR.value}"
-                )
-            else:  # BotoCoreError
-                raise RuntimeError(
-                    f"AWS connection error: {str(e)}. "
-                    f"Error code: {VoiceErrorCode.NOVA_SONIC_UNAVAILABLE.value}"
-                )
-    
-    def validate_model_availability(self) -> bool:
-        """Validate that the configured Nova Sonic model is available.
-        
-        This method checks if the model is accessible in the configured region
-        by attempting to list available models or making a test call.
-        
-        Returns:
-            True if model is available, False otherwise
-        """
-        # In dev mode, always return True
-        if self.dev_mode:
-            logger.debug("🔧 Dev mode: Skipping model availability validation")
-            return True
-        
-        try:
-            # Try to get model information
-            bedrock_client = boto3.client(
-                'bedrock',
-                region_name=self.config.region,
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-            )
-            
-            # List foundation models and check if our model is available
-            response = bedrock_client.list_foundation_models()
-            available_models = [
-                model['modelId'] 
-                for model in response.get('modelSummaries', [])
-            ]
-            
-            # Check if our model is in the list
-            if self.config.model_id in available_models:
-                return True
-            
-            # If not in list, try a test invocation with minimal data
-            # This is a fallback check in case the model list is incomplete
-            try:
-                test_body = {
-                    "inputModality": "TEXT",
-                    "outputModality": "TEXT",
-                    "textInput": {
-                        "text": "test",
-                        "language": "en"
+        client,
+        model_id: str,
+        system_prompt: str,
+        language: str = "en",
+    ):
+        self._client = client
+        self._model_id = model_id
+        self._system_prompt = system_prompt
+        self._language = language
+
+        self._stream = None
+        self._response_task: Optional[asyncio.Task] = None
+        self.is_active = False
+
+        self._prompt_name = str(uuid.uuid4())
+        self._content_name = str(uuid.uuid4())
+        self._audio_content_name = str(uuid.uuid4())
+
+        # Output collectors
+        self.transcript: str = ""          # USER transcript
+        self.assistant_text: str = ""      # ASSISTANT text
+        self.audio_out: bytes = b""        # LPCM 24 kHz audio
+
+        # Callbacks (optional)
+        self.on_transcript: Optional[Callable[[str], None]] = None
+        self.on_assistant_text: Optional[Callable[[str], None]] = None
+        self.on_audio_chunk: Optional[Callable[[bytes], None]] = None
+
+        # Internal state
+        self._role: str = ""
+        self._display_assistant_text = False
+        self._audio_output_queue: asyncio.Queue = asyncio.Queue()
+
+    # ── Event helpers ──────────────────────────────────────────────────────
+
+    async def _send(self, payload: str):
+        from aws_sdk_bedrock_runtime.models import (
+            InvokeModelWithBidirectionalStreamInputChunk,
+            BidirectionalInputPayloadPart,
+        )
+        chunk = InvokeModelWithBidirectionalStreamInputChunk(
+            value=BidirectionalInputPayloadPart(bytes_=payload.encode("utf-8"))
+        )
+        await self._stream.input_stream.send(chunk)
+
+    # ── Open / close ──────────────────────────────────────────────────────
+
+    async def open(self):
+        """Open bidirectional stream and send session/prompt/system events."""
+        from aws_sdk_bedrock_runtime.client import (
+            InvokeModelWithBidirectionalStreamOperationInput,
+        )
+
+        self._stream = await self._client.invoke_model_with_bidirectional_stream(
+            InvokeModelWithBidirectionalStreamOperationInput(model_id=self._model_id)
+        )
+        self.is_active = True
+
+        # Start consuming responses in background
+        self._response_task = asyncio.create_task(self._consume_responses())
+
+        # 1 — sessionStart
+        await self._send(json.dumps({
+            "event": {
+                "sessionStart": {
+                    "inferenceConfiguration": {
+                        "maxTokens": 1024,
+                        "topP": 0.9,
+                        "temperature": 0.7,
                     }
                 }
-                
-                self._bedrock_runtime.invoke_model(
-                    modelId=self.config.model_id,
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(test_body)
-                )
-                return True
-            except ClientError as e:
-                error_code = e.response.get('Error', {}).get('Code', '')
-                # If we get a validation error about the model, it's not available
-                if 'ValidationException' in error_code or 'ResourceNotFoundException' in error_code:
-                    return False
-                # Other errors might be transient, so we consider the model available
-                return True
-                
-        except Exception:
-            # If we can't validate, assume unavailable
-            return False
-    
-    async def health_check(self) -> bool:
-        """Check if Nova Sonic service is healthy and accessible.
-        
-        This method performs a lightweight check to verify the service is responding.
-        
-        Returns:
-            True if service is healthy, False otherwise
-        """
-        # In dev mode, always return True
-        if self.dev_mode:
-            logger.debug("🔧 Dev mode: Skipping health check (always healthy)")
-            return True
-        
-        try:
-            # Perform a minimal test call
-            test_text = "health check"
-            test_body = {
-                "inputModality": "TEXT",
-                "outputModality": "TEXT",
-                "textInput": {
-                    "text": test_text,
-                    "language": "en"
+            }
+        }))
+
+        # 2 — promptStart
+        voice = self.VOICE_ES if self._language == "es" else self.VOICE_EN
+        await self._send(json.dumps({
+            "event": {
+                "promptStart": {
+                    "promptName": self._prompt_name,
+                    "textOutputConfiguration": {"mediaType": "text/plain"},
+                    "audioOutputConfiguration": {
+                        "mediaType": "audio/lpcm",
+                        "sampleRateHertz": 24000,
+                        "sampleSizeBits": 16,
+                        "channelCount": 1,
+                        "voiceId": voice,
+                        "encoding": "base64",
+                        "audioType": "SPEECH",
+                    },
                 }
             }
-            
-            response = self._bedrock_runtime.invoke_model(
-                modelId=self.config.model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(test_body)
+        }))
+
+        # 3 — system prompt (TEXT content)
+        await self._send(json.dumps({
+            "event": {
+                "contentStart": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._content_name,
+                    "type": "TEXT",
+                    "interactive": True,
+                    "role": "SYSTEM",
+                    "textInputConfiguration": {"mediaType": "text/plain"},
+                }
+            }
+        }))
+
+        await self._send(json.dumps({
+            "event": {
+                "textInput": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._content_name,
+                    "content": self._system_prompt,
+                }
+            }
+        }))
+
+        await self._send(json.dumps({
+            "event": {
+                "contentEnd": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._content_name,
+                }
+            }
+        }))
+
+    async def start_audio_input(self):
+        """Signal that audio chunks will follow."""
+        await self._send(json.dumps({
+            "event": {
+                "contentStart": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._audio_content_name,
+                    "type": "AUDIO",
+                    "interactive": True,
+                    "role": "USER",
+                    "audioInputConfiguration": {
+                        "mediaType": "audio/lpcm",
+                        "sampleRateHertz": 16000,
+                        "sampleSizeBits": 16,
+                        "channelCount": 1,
+                        "audioType": "SPEECH",
+                        "encoding": "base64",
+                    },
+                }
+            }
+        }))
+
+    async def send_audio_chunk(self, pcm_bytes: bytes):
+        """Send one PCM chunk (16 kHz, 16-bit, mono)."""
+        if not self.is_active:
+            return
+        await self._send(json.dumps({
+            "event": {
+                "audioInput": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._audio_content_name,
+                    "content": base64.b64encode(pcm_bytes).decode("utf-8"),
+                }
+            }
+        }))
+
+    async def end_audio_input(self):
+        await self._send(json.dumps({
+            "event": {
+                "contentEnd": {
+                    "promptName": self._prompt_name,
+                    "contentName": self._audio_content_name,
+                }
+            }
+        }))
+
+    async def close(self):
+        """End session and close stream."""
+        if not self.is_active:
+            return
+        try:
+            await self._send(json.dumps({
+                "event": {"promptEnd": {"promptName": self._prompt_name}}
+            }))
+            await self._send(json.dumps({"event": {"sessionEnd": {}}}))
+            await self._stream.input_stream.close()
+        except Exception as e:
+            logger.warning(f"Error closing Nova Sonic session: {e}")
+        finally:
+            self.is_active = False
+            if self._response_task and not self._response_task.done():
+                self._response_task.cancel()
+
+    # ── Response consumer ──────────────────────────────────────────────────
+
+    async def _consume_responses(self):
+        try:
+            from aws_sdk_bedrock_runtime.models import (
+                InvokeModelWithBidirectionalStreamOutputChunk,
             )
-            
-            # If we get a response, service is healthy
-            response_body = json.loads(response['body'].read())
-            return 'output' in response_body
-            
-        except Exception:
-            return False
-    
-    def get_model_id(self) -> str:
-        """Get the currently configured model ID.
-        
-        Returns:
-            Model ID string
-        """
-        return self.config.model_id
-    
-    def get_region(self) -> str:
-        """Get the currently configured AWS region.
-        
-        Returns:
-            AWS region string
-        """
-        return self.config.region
+
+            # await_output() MUST be called once to get the output stream
+            _, output_stream = await self._stream.await_output()
+
+            async for event in output_stream:
+                try:
+                    if not isinstance(event, InvokeModelWithBidirectionalStreamOutputChunk):
+                        if hasattr(event, "message"):
+                            logger.error(f"Nova Sonic stream error: {event.message}")
+                        continue
+
+                    if not (event.value and event.value.bytes_):
+                        continue
+
+                    data = json.loads(event.value.bytes_.decode("utf-8"))
+                    ev = data.get("event", {})
+
+                    if "contentStart" in ev:
+                        self._role = ev["contentStart"].get("role", "")
+                        add = ev["contentStart"].get("additionalModelFields", "")
+                        if add:
+                            try:
+                                self._display_assistant_text = (
+                                    json.loads(add).get("generationStage") == "SPECULATIVE"
+                                )
+                            except Exception:
+                                pass
+
+                    elif "textOutput" in ev:
+                        text = ev["textOutput"].get("content", "")
+                        role = ev["textOutput"].get("role", self._role)
+                        if role == "USER":
+                            self.transcript += text
+                            if self.on_transcript:
+                                self.on_transcript(text)
+                        elif role == "ASSISTANT" and self._display_assistant_text:
+                            self.assistant_text += text
+                            if self.on_assistant_text:
+                                self.on_assistant_text(text)
+
+                    elif "audioOutput" in ev:
+                        chunk = base64.b64decode(ev["audioOutput"]["content"])
+                        self.audio_out += chunk
+                        await self._audio_output_queue.put(chunk)
+                        if self.on_audio_chunk:
+                            self.on_audio_chunk(chunk)
+
+                    elif "completionEnd" in ev:
+                        break
+
+                except Exception as e:
+                    if "ValidationException" in str(e):
+                        logger.error(f"Nova Sonic validation error: {e}")
+                    else:
+                        logger.warning(f"Nova Sonic response error: {e}")
+                    break
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Nova Sonic consume_responses fatal error: {e}")
+        finally:
+            self.is_active = False
+
+    # ── Convenience one-shot methods ───────────────────────────────────────
+
+    async def run_tts(self, text: str, on_audio_chunk: Callable[[bytes], None]):
+        """Open session, send a text message as USER, collect audio response, close."""
+        self.on_audio_chunk = on_audio_chunk
+        await self.open()
+
+        # Send text as USER message
+        text_name = str(uuid.uuid4())
+        await self._send(json.dumps({
+            "event": {
+                "contentStart": {
+                    "promptName": self._prompt_name,
+                    "contentName": text_name,
+                    "type": "TEXT",
+                    "interactive": True,
+                    "role": "USER",
+                    "textInputConfiguration": {"mediaType": "text/plain"},
+                }
+            }
+        }))
+        await self._send(json.dumps({
+            "event": {
+                "textInput": {
+                    "promptName": self._prompt_name,
+                    "contentName": text_name,
+                    "content": text,
+                }
+            }
+        }))
+        await self._send(json.dumps({
+            "event": {
+                "contentEnd": {
+                    "promptName": self._prompt_name,
+                    "contentName": text_name,
+                }
+            }
+        }))
+
+        # Wait for audio to finish (completionEnd or timeout)
+        try:
+            await asyncio.wait_for(
+                self._wait_for_completion(),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("run_tts: timeout waiting for audio")
+
+        await self.close()
+
+    async def run_stt(self, audio_data: bytes) -> str:
+        """Open session, stream audio, return transcript."""
+        await self.open()
+        await self.start_audio_input()
+
+        # Send in 3200-byte chunks (100ms @ 16kHz 16-bit mono)
+        chunk_size = 3200
+        for i in range(0, len(audio_data), chunk_size):
+            await self.send_audio_chunk(audio_data[i:i + chunk_size])
+            await asyncio.sleep(0.01)
+
+        await self.end_audio_input()
+
+        try:
+            await asyncio.wait_for(self._wait_for_completion(), timeout=15.0)
+        except asyncio.TimeoutError:
+            logger.warning("run_stt: timeout waiting for transcript")
+
+        await self.close()
+        return self.transcript
+
+    async def _wait_for_completion(self):
+        """Wait until the response task finishes."""
+        if self._response_task:
+            try:
+                await self._response_task
+            except asyncio.CancelledError:
+                pass
